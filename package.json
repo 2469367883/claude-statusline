@@ -1,0 +1,27 @@
+{
+  "name": "claude-statusline",
+  "version": "1.0.0",
+  "description": "A clean, ultra-fast and zero-dependency statusline for Claude Code",
+  "main": "./bin/statusline.js",
+  "bin": {
+    "claude-statusline": "./bin/cli.js"
+  },
+  "scripts": {
+    "preview": "node ./bin/cli.js preview",
+    "install-local": "node ./bin/cli.js install",
+    "uninstall-local": "node ./bin/cli.js uninstall"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "statusline",
+    "prompt",
+    "cli",
+    "terminal"
+  ],
+  "author": "pipi",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
