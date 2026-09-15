@@ -92,6 +92,26 @@ cd claude-code-status
 node ./bin/cli.js install
 ```
 
+### 💡 Note for CC-Switch Users
+
+If you use [CC-Switch](https://github.com/tiann/cc-switch) to manage and switch Claude Code providers, CC-Switch will rewrite `~/.claude/settings.json` when adding or switching providers. To keep your statusline active across switches, configure it directly in CC-Switch:
+
+1. Click **"Edit"** on any provider card and scroll down to the **very bottom** of the page.
+2. Choose one of the following methods to add the statusline config:
+   - **Recommended (Global for all providers)**: Click **"Edit Common Config" (编辑通用配置)** at the bottom, add the following snippet into the configuration JSON, and save. CC-Switch will then automatically carry the statusline configuration every time you switch or add a provider:
+     ```json
+     {
+       "statusLine": {
+         "type": "command",
+         "command": "ccs"
+       }
+     }
+     ```
+   - **Current provider only**: Add the `"statusLine"` block directly into the **Configuration JSON** box at the bottom of the edit page and save.
+
+> [!TIP]
+> If editing within an existing provider's configuration JSON that already has `"env": { ... }`, simply append the `"statusLine"` block separated by a comma `,`.
+
 ---
 
 ## Themes & Styling

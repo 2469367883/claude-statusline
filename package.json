@@ -1,16 +1,27 @@
 {
   "name": "claude-code-status",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "A clean, ultra-fast and zero-dependency statusline and observability suite for Claude Code",
-  "main": "./bin/statusline.js",
+  "main": "bin/statusline.js",
   "bin": {
-    "claude-code-status": "./bin/cli.js",
-    "ccs": "./bin/cli.js",
-    "claude-statusline": "./bin/cli.js"
+    "claude-code-status": "bin/cli.js",
+    "ccs": "bin/cli.js",
+    "claude-statusline": "bin/cli.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PipiCraft/claude-code-status.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PipiCraft/claude-code-status/issues"
+  },
+  "homepage": "https://github.com/PipiCraft/claude-code-status#readme",
   "files": [
     "bin/",
-    "lib/"
+    "lib/",
+    "README.md",
+    "README.en.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "node --test",

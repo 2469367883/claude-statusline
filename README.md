@@ -92,6 +92,26 @@ cd claude-code-status
 node ./bin/cli.js install
 ```
 
+### 💡 CC-Switch 用户特别说明
+
+如果你使用 [CC-Switch](https://github.com/tiann/cc-switch) 来管理和切换 Claude Code 供应商路由，CC-Switch 在切换或添加供应商时会重写 `~/.claude/settings.json`。为避免配置被覆盖失效，请按以下步骤配置：
+
+1. 打开任意供应商卡片的 **「编辑」** 页面，滚动到**页面最下方**。
+2. 选择以下任意一种方式添加状态栏配置：
+   - **推荐（全局通用）**：点击下方的 **「编辑通用配置」**，在配置 JSON 中添加如下内容并保存。之后每次切换或添加任意供应商，CC-Switch 都会自动携带状态栏配置：
+     ```json
+     {
+       "statusLine": {
+         "type": "command",
+         "command": "ccs"
+       }
+     }
+     ```
+   - **仅当前供应商生效**：直接在编辑页面最下方的 **配置 JSON** 输入框里加入 `"statusLine"` 代码块并保存。
+
+> [!TIP]
+> 如果是在单个供应商的配置 JSON 里直接添加，通常原有已有 `"env": { ... }`，只需在它后面用逗号 `,` 分隔加上 `"statusLine"` 这一段即可。
+
 ---
 
 ## 主题与排版
