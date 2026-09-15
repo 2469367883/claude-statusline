@@ -1,77 +1,94 @@
 # claude-code-status (ccs)
 
-> A clean, ultra-fast and **zero-dependency** statusline and observability suite for [Claude Code](https://github.com/anthropics/claude-code).
+A lightweight, zero-dependency statusline and observability tool for [Claude Code](https://github.com/anthropics/claude-code).
 
-[中文说明](#中文文档) | [English](#preview)
+[中文说明](#中文说明) | [English](#preview)
 
 ---
 
 ## Preview
 
-### Default Out-of-the-Box Mode (核心 4 字段极简风)
+### Default Mode
 ```text
 claude-3-7-sonnet | [██░░░░░░] 29% (58.0k/200.0k) | your-project | main*
 ```
 
-### Full Suite Enabled (取消注释全部可选特性后)
+### Full Features Enabled
 ```text
 Sonnet 3.7 | [██░░░░░░] 29% (58.0k/200.0k) | $0.18 (¥1.34) | 5h:28%(2h14m) | Cache:92% | your-project | main* | +185/-32 | MCP:2 | [effort: high]
 ```
 
 ---
 
+## Comparison with Alternatives
+
+There are several community statusline implementations for Claude Code. Below is an objective comparison of their design trade-offs:
+
+| Dimension | `claude-code-status` (This tool) | `ccstatusline` | Bash scripts (`claude-code-statusline`) | `CCometixLine` |
+| :--- | :--- | :--- | :--- | :--- |
+| **Runtime & Deps** | Node.js built-ins (0 dependencies) | React + Ink (`node_modules`) | Bash + `jq` | Rust compiled binary |
+| **Render Latency** | 1~3 ms | 40~100 ms | < 15 ms | < 1 ms |
+| **Windows Support** | Native (PowerShell / CMD) | Native | Requires WSL or Git Bash | Native (WinGet / Binary) |
+| **Git Performance** | On-disk TTL cache + timeout | Subprocess spawned every render | Subprocess spawned every render | Native Git calls |
+| **Large Log Safety** | Reads tail 64KB in reverse buffer | Varies | Full-file read via `jq` | Native handling |
+| **Currency & Proxy** | USD, CNY, and custom multipliers | USD only | USD only | USD only |
+| **Configuration** | JSONC with comments & CLI switcher | TS/JS config file | Environment variables / script edit | TOML / Interactive TUI |
+
+### Key Advantages
+
+1. **Zero External Dependencies**: Uses only standard Node.js APIs (`fs`, `path`, `child_process`, `crypto`). If you have Claude Code installed, you already have Node.js. No build step, no npm dependency tree to maintain.
+2. **Low Latency on High-Frequency Redraws**: Claude Code executes the statusline command as a fresh subprocess on every terminal redraw. Keeping execution time around 1~3ms prevents typing stutter.
+3. **Subprocess-Safe Git Integration**: In large repositories, running `git status` repeatedly can slow down the terminal. This tool caches Git status output in the OS temp directory with a short TTL (default 2s) and enforces a 2-second timeout.
+4. **Memory-Safe Transcript Fallback**: When token usage needs to be retrieved from session transcripts, it reads only the last 64KB chunk from the end of the file instead of reading entire multi-megabyte JSONL files into memory.
+5. **Cross-Platform Native**: Runs identically across Windows (PowerShell/CMD), macOS, and Linux without requiring `bash`, `jq`, or WSL.
+6. **Dual Currency & Proxy Pricing**: Supports USD, CNY, or both simultaneously, with a custom multiplier (`costMultiplier`) for users routing through API proxies or resellers.
+
+---
+
 ## Features
 
-- ⚡ **Zero-Dependency**: Pure native Node.js, uses only built-in APIs (`fs`, `path`, `child_process`).
-- 🚀 **Ultra-Fast**: Render logic runs in 1~3 milliseconds with zero network latency. The only subprocess is `git status`, cached on disk by default (`gitCacheTtl`).
-- 🎯 **Clean Defaults**: Shows only core essentials by default: **Model Name**, **Context Window & Progress Bar**, **Project Directory**, and **Git Branch**.
-- ⌨️ **Ultra-Short Alias**: Full command `claude-code-status` plus handy 3-letter alias **`ccs`** (`ccs ui`, `ccs theme`, `ccs preview`).
-- 🎨 **Color Themes**: 4 built-in palettes: `default` (ANSI 16-color), `catppuccin` (Mocha TrueColor), `nord` (TrueColor), `tokyo` (Tokyo Night TrueColor).
-- 🏷 **Model Aliases**: Auto-cleans long date suffixes (e.g. `claude-3-7-sonnet-20250219` -> `claude-3-7-sonnet`) and supports custom alias mappings (`"Sonnet 3.7"`).
-- 📝 **Auto Config Generation**: Automatically creates an annotated `~/.claude/statusline.config.json` on first run if missing.
-- 🎨 **Custom Delimiter**: Freely configure any separator symbol (`|`, `/`, `•`, `::`, `-`), default is `|`.
-- 🎨 **Interactive UI Presets**: `ccs ui` for switching between monochrome, icons, and dual-line modes.
-- 📈 **Code Velocity Tracker**: Real-time counter of lines added and removed (`+185/-32`).
-- ⚡ **Prompt Cache Hit Rate**: Monitor cache efficiency and savings (`Cache:92%`).
-- ⏱ **Multi-Quota & Countdown**: 5-hour, 7-day, and monthly quota monitoring with reset countdown (`5h:28%(2h14m)`).
-- 🌿 **Smart Git Integration**: Simple clean `main*` by default; optional remote sync tracking (`main ↑2 ↓1*`). `git status` output is cached on disk.
-- 🔌 **MCP Server Monitor**: Displays active/configured MCP server count (`MCP:2`) across global and project configs.
-- 📄 **Dual-Line Layout**: Switch between single-line and dual-line mode (`lines: 2`) for split or narrow terminal windows.
-- 💱 **Currency & Multipliers**: Switch USD/CNY/Both with custom pricing multiplier (`costMultiplier: 1.5`).
-- 🎛 **Fully Modular**: Freely select which components to show and in what order by editing the config file.
+- **Minimal Defaults**: Shows model name, context window usage with progress bar, current directory, and Git branch.
+- **Short CLI Alias**: Installed as `claude-code-status` with a 3-letter alias `ccs` (`ccs ui`, `ccs theme`, `ccs preview`).
+- **Color Themes**: 4 built-in palettes: `default` (standard ANSI), `catppuccin` (Mocha), `nord`, and `tokyo` (Tokyo Night).
+- **Model Aliases**: Automatically strips trailing date suffixes (e.g. `claude-3-7-sonnet-20250219` becomes `claude-3-7-sonnet`) and supports user-defined name mappings.
+- **Code Velocity Tracker**: Tracks added and removed lines (`+185/-32`) in real time.
+- **Prompt Cache Monitoring**: Displays prompt cache hit percentage (`Cache:92%`).
+- **Rate Limit Quotas**: Tracks 5-hour, 7-day, and monthly usage limits with remaining time countdowns.
+- **MCP Server Counter**: Scans user settings and project configs for active MCP servers.
+- **Dual-Line Mode**: Supports splitting output across two lines (`lines: 2`) for narrow or split terminal layouts.
+- **JSONC Config**: Configuration file supports line comments (`//`), block comments (`/* */`), and trailing commas.
 
 ---
 
 ## Installation
 
-### 方式 1: npm 全局安装 (推荐，离线可用，全局常驻)
+### Method 1: Global Install via npm (Recommended)
 
 ```bash
-# 1. 全局安装到系统:
 npm install -g claude-code-status
 
-# 2. 一键自动配置并生成默认配置文件 (二选一):
+# Auto-configure ~/.claude/settings.json
 ccs install
-# 或者使用完整命令:
+# Or use the full command name:
 claude-code-status install
 ```
 
-安装后，您可以在终端任意位置直接输入 **`ccs`** 命令进行快捷管理：
+After installation, use `ccs` to manage settings:
 ```bash
-ccs ui                   # 交互式挑选 UI 风格
-ccs theme catppuccin     # 一键切换色彩主题 (default, catppuccin, nord, tokyo)
-ccs delimiter /          # 一键切换分割符号 (如 / 或 •)
-ccs preview              # 预览全场景效果
-ccs uninstall            # 卸载 Claude Code 配置
+ccs ui                   # Choose UI style
+ccs theme catppuccin     # Switch color theme (default, catppuccin, nord, tokyo)
+ccs delimiter /          # Set separator character
+ccs preview              # Preview layouts and themes
+ccs uninstall            # Remove statusline from Claude Code settings
 ```
 
-### 方式 2: npx 免安装运行 (即用即下)
+### Method 2: npx (Without Installation)
 
 ```bash
 npx claude-code-status install
 ```
 
-### 方式 3: 从 Git 源码克隆
+### Method 3: From Source
 
 ```bash
 git clone https://github.com/PipiCraft/claude-code-status.git
@@ -81,97 +98,82 @@ node ./bin/cli.js install
 
 ---
 
-## Themes & UI Presets (色彩主题与预设)
+## Themes & Styling
 
-### 1. 切换调色板主题
-支持随时一键无缝热切：
+### Color Themes
 ```bash
-ccs theme default      # 经典标准 ANSI 16 色
-ccs theme catppuccin   # Mocha 柔和马卡龙 24-bit TrueColor
-ccs theme nord         # 北极光冷淡蓝灰 24-bit TrueColor
-ccs theme tokyo        # Tokyo Night 赛博暗夜 24-bit TrueColor
+ccs theme default      # Standard ANSI 16-color
+ccs theme catppuccin   # Catppuccin Mocha TrueColor
+ccs theme nord         # Nord TrueColor
+ccs theme tokyo        # Tokyo Night TrueColor
 ```
 
-### 2. 交互式 UI 选择器
+### Separator Character
 ```bash
-ccs ui
-```
-
-内置 4 大核心形态：
-1. **经典默认 (Default)**: 标准彩色单行，分割符号遵循配置 (默认: `|`)
-2. **无色纯简 (Monochrome)**: 彻底关闭 ANSI 颜色转义，纯粹终端单色文本（一点颜色不用）
-3. **原生符号 (Unicode Icons)**: 开启系统原生通用符号 (`✦`, `⚡`, `⎇`, `⏱`)，免装字体完美支持
-4. **双行分屏 (Dual Line)**: 自动拆为第 1 行模型/上下文，第 2 行目录/Git，分屏窄屏极佳
-
-### 3. 自由修改分割符号 (Delimiter)
-```bash
-ccs delimiter /     # 斜杠分隔: claude-3-7-sonnet / [██░░░░░░] ...
-ccs delimiter "•"   # 圆点分隔: claude-3-7-sonnet • [██░░░░░░] ...
-ccs delimiter "|"   # 竖线分隔 (默认)
+ccs delimiter /     # Slash: claude-3-7-sonnet / [██░░░░░░] ...
+ccs delimiter "•"   # Bullet: claude-3-7-sonnet • [██░░░░░░] ...
+ccs delimiter "|"   # Pipe (default)
 ```
 
 ---
 
 ## Configuration
 
-首次运行或执行 `install` 时，会自动在 `~/.claude/statusline.config.json` 生成带完整注释的配置文件。
-
-配置文件默认支持 `//` 注释与尾随逗号：
+On first run or after `ccs install`, an annotated config file is generated at `~/.claude/statusline.config.json`.
 
 ```jsonc
 {
-  // 1. 字段显示与排列顺序
-  // 默认仅显示核心 4 项，想要开启其它特性，直接删除前面的 // 注释即可
+  // 1. Fields to display and their order.
+  // Uncomment any optional field to enable it.
   "fields": [
-    "model",        // 模型名称 (例如: claude-3-7-sonnet)
-    "context",      // 上下文使用量及进度条 (例如: [██░░░░░░] 29% (58k/200k))
-    "project",      // 当前项目目录名 (例如: my-project)
-    "git",          // Git 分支与修改标记 (例如: main*)
-    // "cost",      // 会话费用 (支持 USD / CNY 及加价倍率，例如: ¥1.34 或 $0.18)
-    // "rate_limit",// 限额配额与回满倒计时 (例如: 5h:28%(2h14m) 7d:42%(3d3h))
-    // "cache",     // Prompt Cache 缓存命中率 (例如: Cache:92%)
-    // "lines",     // 会话代码增删吞吐量统计 (例如: +185/-32)
-    // "mcp",       // 已连接的 MCP 服务数量 (例如: MCP:2)
-    // "effort",    // 思考级别/推理强度 (例如: [effort: high])
-    // "output_style" // 输出风格标签 (例如: [concise])
+    "model",        // Model name
+    "context",      // Context window tokens and progress bar
+    "project",      // Current directory name
+    "git",          // Git branch and dirty marker
+    // "cost",      // Session cost (supports USD, CNY, and multiplier)
+    // "rate_limit",// Quota percentage and reset countdown
+    // "cache",     // Prompt cache hit rate
+    // "lines",     // Lines added/removed count
+    // "mcp",       // Connected MCP server count
+    // "effort",    // Reasoning effort level
+    // "output_style" // Output style tag
   ],
 
-  // 2. 终端显示行数 (1 为单行，2 为双行)
+  // 2. Display lines (1 for single line, 2 for dual line)
   "lines": 1,
 
-  // 3. Git 状态显示 (false 为简单 * 标记，true 为展示 ↑ahead ↓behind 远端同步差异)
-  "showGitAheadBehind": false,
-  // git 状态缓存秒数 (默认 2，0 为每次实时读取)
-  "gitCacheTtl": 2,
+  // 3. Git status settings
+  "showGitAheadBehind": false, // Show upstream diff arrows (e.g. main ↑2 ↓1*)
+  "gitCacheTtl": 2,            // Cache duration in seconds (0 = disabled)
 
-  // 4. 上下文上限 Token 数 (0 为自动跟随智能体实际大小)
+  // 4. Context window size limit (0 = auto-detect)
   "contextWindowSize": 0,
 
-  // 5. 费用与汇率计算
-  "currency": "USD",
-  "costMultiplier": 1.0,
-  "exchangeRate": 7.25,
+  // 5. Cost and currency
+  "currency": "USD",          // "USD", "CNY", or "BOTH"
+  "costMultiplier": 1.0,      // Multiplier for proxy/reseller rates
+  "exchangeRate": 7.25,       // USD to CNY exchange rate
   "showCostMultiplier": false,
 
-  // 6. 配额限额显示
+  // 6. Rate limits
   "rateLimitWindows": ["5h", "7d", "mo"],
   "showRateLimitCountdown": true,
 
-  // 7. 外观风格与分隔符
+  // 7. Visual styling
   "delimiter": "|",
-  "icons": "none",
+  "icons": "none",            // "none" or "unicode"
   "progressBar": true,
   "progressBarLength": 8,
   "warningThreshold": 80,
   "dangerThreshold": 90,
 
-  // 8. 终端颜色控制 (设为 false 彻底关闭所有颜色)
+  // 8. Terminal colors
   "colors": true,
 
-  // 9. 色彩主题预设 (可选 "default", "catppuccin", "nord", "tokyo")
+  // 9. Palette theme ("default", "catppuccin", "nord", "tokyo")
   "theme": "default",
 
-  // 10. 模型别名自定义映射 (默认自动清理末尾长日期后缀)
+  // 10. Model alias mapping
   "modelAliases": {
     // "claude-3-7-sonnet": "Sonnet 3.7",
     // "claude-3-5-haiku": "Haiku 3.5"
@@ -181,40 +183,64 @@ ccs delimiter "|"   # 竖线分隔 (默认)
 
 ### Available Fields
 
-| Field Name | Description | Status by Default | Example |
-| :--- | :--- | :--- | :--- |
-| `model` | AI 模型名称 (智能去除日期，支持别名) | **开启** | `claude-3-7-sonnet` 或 `Sonnet 3.7` |
-| `context` | 上下文使用量与进度条 (支持反向块读取) | **开启** | `[██░░░░░░] 29% (58.0k/200.0k)` |
-| `project` | 当前项目目录名 | **开启** | `your-project` |
-| `git` | Git 分支与状态 (带磁盘 TTL 缓存) | **开启** | `main*` 或 `main ↑2 ↓1*` |
-| `cost` | 会话费用 (USD / CNY / 倍率) | 注释可选 | `$0.18 (¥1.34)` |
-| `rate_limit` | 5小时/7天/月度限额与倒计时 | 注释可选 | `5h:28%(2h14m)` |
-| `cache` | Prompt Cache 命中率 | 注释可选 | `Cache:92%` |
-| `lines` | 代码吞吐量 (行数增删) | 注释可选 | `+185/-32` |
-| `mcp` | 已注册的 MCP 工具服务数 (多源扫描) | 注释可选 | `MCP:2` |
-| `effort` | 思考/推理级别 | 注释可选 | `[effort: high]` |
-| `output_style` | 输出风格标签 | 注释可选 | `[concise]` |
+| Field Name | Description | Default | Example |
+| :--- | :--- | :---: | :--- |
+| `model` | Model name (cleans date suffixes, supports aliases) | Enabled | `claude-3-7-sonnet` or `Sonnet 3.7` |
+| `context` | Context window usage with progress bar | Enabled | `[██░░░░░░] 29% (58.0k/200.0k)` |
+| `project` | Current directory name | Enabled | `your-project` |
+| `git` | Git branch and dirty marker (cached) | Enabled | `main*` or `main ↑2 ↓1*` |
+| `cost` | Session cost (USD / CNY / multiplier) | Optional | `$0.18 (¥1.34)` |
+| `rate_limit` | Quota usage and reset countdown | Optional | `5h:28%(2h14m)` |
+| `cache` | Prompt cache hit rate | Optional | `Cache:92%` |
+| `lines` | Code velocity (lines added and removed) | Optional | `+185/-32` |
+| `mcp` | Configured MCP server count | Optional | `MCP:2` |
+| `effort` | Reasoning effort level | Optional | `[effort: high]` |
+| `output_style` | Output style tag | Optional | `[concise]` |
 
 ---
 
-## <a id="中文文档"></a>中文说明
+## 中文说明
 
-Claude Code 终极自定义状态栏与监控套件。
+针对 Claude Code 终端的状态栏与指标展示工具。
 
-### 设计理念
-1. **开箱即用，极简纯粹**：
-   - 默认**仅展示最核心的 4 项**：`模型名称`、`上下文进度`、`项目目录`、`Git分支`；
-   - 零外部依赖，毫秒级冷启动渲染，无任何卡顿。
-2. **极客短别名 `ccs`**：
-   - 支持直接使用三字符短命令 `ccs` 进行全部操作（`ccs ui`、`ccs theme`、`ccs preview`）。
-3. **高级主题与模型智能美化**：
-   - 内置 Catppuccin、Nord、Tokyo Night 高级调色板；
-   - 自动剥离模型名称冗长尾巴，支持配置个性化别名。
-4. **统一清晰的分割符配置**：
-   - 竖线 `|`、斜杠 `/`、圆点 `•` 统一收敛为单个 `"delimiter"` 字段，默认是 `|`，支持随时输入任何符号。
-5. **极度宽容的 JSONC 解析器**：
-   - 配置文件支持 `//` 单行注释、`/* */` 多行注释与尾随逗号。
+### 为什么写这个工具
 
-### 许可证
+社区里现有的 Claude Code 状态栏工具有两类典型做法：
+- 一类使用 Shell + `jq` 脚本编写（例如部分单文件配置）。这类脚本在 macOS 或 Linux 上较轻，但在 Windows 下需要借助 Git Bash 或 WSL 才能运行，处理汇率、倒计时以及复杂路径时也容易出现兼容性问题。
+- 另一类采用类似 React + Ink 的框架构建。虽然视觉效果华丽，但引入了较重的 `node_modules` 依赖树。由于状态栏是终端每次输出或重绘时都会独立启动的子进程，框架开销容易导致几十毫秒的启动延迟。
+
+`claude-code-status` 采用纯 Node.js 原生 API 实现，定位在两者之间寻找平衡：
+
+1. **无外部依赖**：只要安装了 Claude Code，机器上就已经具备 Node.js 环境，无需额外安装任何第三方包或系统工具。
+2. **低延迟启动**：单次渲染耗时控制在 1~3ms，避免频繁刷新造成终端打字卡顿。
+3. **跨平台支持**：在 Windows（PowerShell / CMD）、macOS 和 Linux 上行为一致，开箱即用。
+4. **大仓库 Git 保护**：通过临时目录对 `git status` 输出进行短时间缓存（默认 2 秒），并设置了超时熔断，防止在大型代码库中反复 fork 进程引起卡顿。
+5. **安全读取大日志**：在从会话日志读取 Token 消耗时，仅分块倒序读取文件末尾 64KB，避免在长时间会话中一次性将几十兆的 JSONL 读入内存。
+6. **符合国内使用场景**：内置人民币与美元双币种换算，支持自定义倍率（`costMultiplier`），方便使用中转 API 的开发者准确核算费用。
+
+### 快速上手
+
+```bash
+# 全局安装
+npm install -g claude-code-status
+
+# 自动写入 ~/.claude/settings.json 配置
+ccs install
+```
+
+日常管理可直接使用短别名 `ccs`：
+- `ccs ui`：交互式选择排版样式（单行、双行、无色纯文本、原生 Unicode 符号）。
+- `ccs theme <name>`：切换调色板（`default`, `catppuccin`, `nord`, `tokyo`）。
+- `ccs delimiter <char>`：修改分隔符（如 `/` 或 `•`）。
+- `ccs preview`：在终端预览全部排版和主题效果。
+- `ccs uninstall`：安全移除相关配置。
+
+### 配置文件说明
+
+首次运行会在 `~/.claude/statusline.config.json` 自动生成带注释的配置文件。该文件采用宽容的 JSONC 解析，支持 `//` 与 `/* */` 注释，也允许尾随逗号。想要开启某项可选指标（如费用、限额、缓存命中率等），直接删除对应行前面的注释即可。
+
+---
+
+## License
 
 [MIT License](LICENSE)
