@@ -1,174 +1,145 @@
 #!/usr/bin/env node
 // @ts-check
+"use strict";
 
 /**
  * Claude Code Statusline
  * Zero-dependency, ultra-fast statusline renderer for Claude Code.
  */
 
-const fs = require("fs");
 const path = require("path");
-const os = require("os");
-const { execFileSync, spawn } = require("child_process");
-
-const DIM = "\x1b[2m";
-const CYAN = "\x1b[36m";
-const GREEN = "\x1b[32m";
-const YELLOW = "\x1b[33m";
-const MAGENTA = "\x1b[35m";
-const RESET = "\x1b[0m";
+const {
+  DIM,
+  CYAN,
+  GREEN,
+  YELLOW,
+  RED,
+  MAGENTA,
+  RESET,
+  THEMES,
+  getThemeColors,
+  stripAnsi,
+  makeProgressBar,
+  formatCountdown,
+  readLastUsageFromTranscript,
+} = require("../lib/utils.js");
+const {
+  DEFAULT_FIELDS,
+  DEFAULT_RATE_LIMIT_WINDOWS,
+  GIT_TIMEOUT_MS,
+  DEFAULT_CONFIG,
+  UI_PRESETS,
+  DEFAULT_CONFIG_TEMPLATE,
+  parseJsonWithComments,
+  loadConfig,
+} = require("../lib/config.js");
+const { readGitStatus } = require("../lib/git.js");
+const { getMcpServerCount } = require("../lib/mcp.js");
+const { FIELD_RENDERERS } = require("../lib/renderers.js");
 
 /**
- * @typedef {Object} ClaudeContextWindow
- * @property {number} [total_input_tokens]
- * @property {number} [context_window_size]
- * @property {number} [used_percentage]
- * @property {number} [used_tokens]
- * @property {number} [total_tokens]
- *
- * @typedef {Object} ClaudeSessionInput
- * @property {{ current_dir?: string }} [workspace]
- * @property {string} [cwd]
- * @property {{ display_name?: string, id?: string }} [model]
- * @property {ClaudeContextWindow} [context_window]
- * @property {string} [transcript_path]
- * @property {{ name?: string } | string} [output_style]
- */
-
-/**
- * Render the statusline string from session input object
- * @param {ClaudeSessionInput} input
+ * Render list of fields into formatted string
+ * @param {string[]} fieldList
+ * @param {any} context
+ * @param {string} delimiter
  * @returns {string}
  */
-function renderStatusline(input = {}) {
-  const cwd = input.workspace?.current_dir || input.cwd || process.cwd();
-  const project = path.basename(cwd);
-
-  // 1. Model name (strip register suffix like [1M])
-  const modelRaw = input.model?.display_name || input.model?.id || "Claude";
-  const model = modelRaw.replace(/\[.*\]$/, "");
-
-  // 2. Context tokens usage
-  let usedTokens = null;
-  let totalTokens = null;
-  const ctx = input.context_window;
-
-  if (ctx && typeof ctx === "object") {
-    if (typeof ctx.total_input_tokens === "number" && typeof ctx.context_window_size === "number" && ctx.context_window_size > 0) {
-      usedTokens = ctx.total_input_tokens;
-      totalTokens = ctx.context_window_size;
-    } else if (typeof ctx.used_percentage === "number" && typeof ctx.context_window_size === "number" && ctx.context_window_size > 0) {
-      totalTokens = ctx.context_window_size;
-      usedTokens = Math.round((ctx.used_percentage / 100) * totalTokens);
-    } else if (typeof ctx.used_tokens === "number" && typeof ctx.total_tokens === "number" && ctx.total_tokens > 0) {
-      usedTokens = ctx.used_tokens;
-      totalTokens = ctx.total_tokens;
-    }
-  }
-
-  // Fallback: estimate from transcript usage records
-  if (usedTokens === null && input.transcript_path) {
-    try {
-      const lines = fs.readFileSync(input.transcript_path, "utf8").split("\n");
-      for (let i = lines.length - 1; i >= 0; i--) {
-        if (!lines[i] || !lines[i].includes('"usage"')) continue;
-        try {
-          const rec = JSON.parse(lines[i]);
-          const u = rec.message && rec.message.usage;
-          if (u) {
-            usedTokens = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.output_tokens || 0);
-            totalTokens = 200000;
-            break;
-          }
-        } catch {}
-      }
-    } catch {}
-  }
-
-  let contextStr = null;
-  if (typeof usedTokens === "number" && typeof totalTokens === "number" && totalTokens > 0) {
-    const usedUnit = usedTokens >= 1000000 ? "M" : "k";
-    const totalUnit = totalTokens >= 1000000 ? "M" : "k";
-    const usedDisplay = usedUnit === "M"
-      ? (usedTokens / 1000000).toFixed(1)
-      : (usedTokens / 1000).toFixed(1);
-    const totalDisplay = totalUnit === "M"
-      ? (totalTokens / 1000000).toFixed(1)
-      : (totalTokens / 1000).toFixed(1);
-    const pct = Math.round((usedTokens / totalTokens) * 100);
-    const color = pct >= 80 ? YELLOW : DIM;
-    contextStr = `${color}${pct}% (${usedDisplay}${usedUnit}/${totalDisplay}${totalUnit})${RESET}`;
-  }
-
+function renderFieldList(fieldList, context, delimiter) {
   const parts = [];
-
-  // Model
-  parts.push(`${GREEN}${model}${RESET}`);
-
-  // Context tokens
-  if (contextStr) {
-    parts.push(contextStr);
-  }
-
-  // Project
-  parts.push(`${CYAN}${project}${RESET}`);
-
-  // Git branch & dirty status (safe timeout & no optional locks)
-  let gitInfo = "";
-  try {
-    const out = execFileSync(
-      "git",
-      ["--no-optional-locks", "-C", cwd, "status", "--porcelain", "--branch"],
-      {
-        timeout: 800,
-        stdio: ["ignore", "pipe", "ignore"],
+  for (const fieldName of fieldList) {
+    const renderer = FIELD_RENDERERS[fieldName.toLowerCase()];
+    if (typeof renderer === "function") {
+      const part = renderer(context);
+      if (part) {
+        parts.push(part);
       }
-    ).toString();
-
-    const lines = out.split("\n");
-    const branchMatch = (lines[0] || "").match(/^## (?:No commits yet on )?(\S+?)(?:\.\.\.|\s|$)/);
-    const branch = branchMatch ? branchMatch[1] : "";
-    if (branch) {
-      const dirty = lines.slice(1).some((l) => l.trim().length > 0);
-      gitInfo = branch + (dirty ? "*" : "");
     }
-  } catch {
-    // Non-git directory or git error: gracefully ignore
   }
-
-  if (gitInfo) {
-    parts.push(`${MAGENTA}${gitInfo}${RESET}`);
-  }
-
-  // Output style (if not default)
-  const styleName = typeof input.output_style === "string"
-    ? input.output_style
-    : input.output_style?.name;
-  if (styleName && styleName !== "default") {
-    parts.push(`${DIM}[${styleName}]${RESET}`);
-  }
-
-  return parts.join(` ${DIM}|${RESET} `);
+  return parts.join(delimiter);
 }
 
 /**
- * Asynchronously forward payload to Orca hook if running inside Orca
- * Non-blocking, fails silently if not present.
- * @param {string} rawPayload
+ * Render the statusline string from session input object
+ * @param {any} [input]
+ * @param {Partial<import("../lib/config.js").StatuslineConfig>} [customConfig]
+ * @returns {string}
  */
-function forwardToOrca(rawPayload) {
-  if (!process.env.ORCA_AGENT_HOOK_PORT || !process.env.ORCA_PANE_KEY) return;
-  const hookPath = path.join(os.homedir(), ".orca", "agent-hooks", "claude-statusline.cmd");
-  if (!fs.existsSync(hookPath)) return;
+function renderStatusline(input = {}, customConfig = {}) {
+  const config = { ...loadConfig(), ...customConfig };
+  const colors = getThemeColors(config.theme);
+  const cwd = input.workspace?.current_dir || input.cwd || process.cwd();
+  const project = path.basename(cwd) || cwd || "workspace";
 
-  try {
-    const child = spawn(hookPath, [], {
-      stdio: ["pipe", "ignore", "ignore"],
-      windowsHide: true,
-    });
-    child.stdin.end(rawPayload);
-    child.unref();
-  } catch {}
+  const iconSets = {
+    unicode: {
+      model: "✦ ",
+      context: "\u26a1 ",
+      cache: "\u26a1 ",
+      cost: "",
+      rate: "\u23f1 ",
+      git: "\u2387 ",
+      mcp: "\ud83d\udd0c ",
+    },
+    none: {
+      model: "",
+      context: "",
+      cache: "",
+      cost: "",
+      rate: "",
+      git: "",
+      mcp: "",
+    },
+  };
+
+  const icons = iconSets[config.icons || "none"] || iconSets.none;
+  const context = { input, config, icons, colors, cwd, project };
+
+  const rawDelimiter = typeof config.delimiter === "string" ? config.delimiter : "|";
+  const delimiter = ` ${colors.DIM}${rawDelimiter.trim()}${colors.RESET} `;
+
+  let result = "";
+  const numLines = Number(config.lines);
+  if (numLines === 2) {
+    let line1Fields = config.line1;
+    let line2Fields = config.line2;
+
+    if (!Array.isArray(line1Fields) || !Array.isArray(line2Fields)) {
+      const activeFields = Array.isArray(config.fields) ? config.fields : DEFAULT_FIELDS;
+      const splitIdx = activeFields.indexOf("project");
+      if (splitIdx > 0) {
+        line1Fields = activeFields.slice(0, splitIdx);
+        line2Fields = activeFields.slice(splitIdx);
+      } else {
+        const mid = Math.ceil(activeFields.length / 2);
+        line1Fields = activeFields.slice(0, mid);
+        line2Fields = activeFields.slice(mid);
+      }
+    }
+
+    const line1Str = renderFieldList(line1Fields, context, delimiter);
+    const line2Str = renderFieldList(line2Fields, context, delimiter);
+
+    if (line1Str && line2Str) {
+      result = `${line1Str}\n${line2Str}`;
+    } else {
+      result = line1Str || line2Str || "";
+    }
+  } else {
+    const activeFields = Array.isArray(config.fields) ? config.fields : DEFAULT_FIELDS;
+    result = renderFieldList(activeFields, context, delimiter);
+  }
+
+  const useColor =
+    config.colors !== false &&
+    config.colors !== "false" &&
+    config.color !== false &&
+    config.color !== "false" &&
+    !process.env.NO_COLOR;
+
+  if (!useColor) {
+    return stripAnsi(result);
+  }
+  return result;
 }
 
 /**
@@ -190,8 +161,6 @@ function run() {
       // Gracefully handle malformed json
     }
 
-    forwardToOrca(raw);
-
     const output = renderStatusline(input);
     process.stdout.write(output);
   });
@@ -203,5 +172,22 @@ if (require.main === module) {
 
 module.exports = {
   renderStatusline,
+  loadConfig,
+  formatCountdown,
+  getMcpServerCount,
+  readGitStatus,
+  makeProgressBar,
+  readLastUsageFromTranscript,
+  stripAnsi,
+  THEMES,
+  getThemeColors,
+  DEFAULT_FIELDS,
+  DEFAULT_RATE_LIMIT_WINDOWS,
+  GIT_TIMEOUT_MS,
+  DEFAULT_CONFIG,
+  DEFAULT_CONFIG_TEMPLATE,
+  UI_PRESETS,
+  parseJsonWithComments,
+  FIELD_RENDERERS,
   run,
 };

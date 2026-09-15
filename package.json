@@ -1,12 +1,21 @@
 {
-  "name": "claude-statusline",
+  "name": "claude-code-status",
   "version": "1.0.0",
-  "description": "A clean, ultra-fast and zero-dependency statusline for Claude Code",
+  "description": "A clean, ultra-fast and zero-dependency statusline and observability suite for Claude Code",
   "main": "./bin/statusline.js",
   "bin": {
+    "claude-code-status": "./bin/cli.js",
+    "ccs": "./bin/cli.js",
     "claude-statusline": "./bin/cli.js"
   },
+  "files": [
+    "bin/",
+    "lib/"
+  ],
   "scripts": {
+    "test": "node --test",
+    "postinstall": "node ./bin/cli.js install --if-unset",
+    "preuninstall": "node ./bin/cli.js uninstall",
     "preview": "node ./bin/cli.js preview",
     "install-local": "node ./bin/cli.js install",
     "uninstall-local": "node ./bin/cli.js uninstall"
@@ -14,7 +23,10 @@
   "keywords": [
     "claude",
     "claude-code",
+    "claude-code-status",
+    "ccs",
     "statusline",
+    "statusbar",
     "prompt",
     "cli",
     "terminal"
@@ -22,6 +34,6 @@
   "author": "pipi",
   "license": "MIT",
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   }
 }
