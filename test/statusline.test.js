@@ -18,6 +18,7 @@ const {
   parseJsonWithComments,
   makeProgressBar,
   formatCountdown,
+  formatDuration,
   renderStatusline,
   readGitStatus,
 } = require("../bin/statusline.js");
@@ -352,4 +353,162 @@ test("cli theme command switches theme in config", () => {
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
+});
+
+test("formatDuration formats milliseconds into human-readable duration strings", () => {
+  assert.equal(formatDuration(0), "<1m");
+  assert.equal(formatDuration(45 * 1000), "<1m");
+  assert.equal(formatDuration(38 * 60 * 1000), "38m");
+  assert.equal(formatDuration((1 * 3600 + 24 * 60) * 1000), "1h 24m");
+  assert.equal(formatDuration(2 * 3600 * 1000), "2h");
+  assert.equal(formatDuration((2 * 86400 + 5 * 3600) * 1000), "2d 5h");
+  assert.equal(formatDuration(-100), "");
+  assert.equal(formatDuration(NaN), "");
+});
+
+test("session_duration renderer outputs formatted elapsed session duration", () => {
+  const fromCost = renderStatusline(
+    { cost: { total_duration_ms: (1 * 3600 + 24 * 60) * 1000 } },
+    { colors: false, fields: ["session_duration"] }
+  );
+  assert.equal(fromCost, "1h 24m");
+
+  const fromAlias = renderStatusline(
+    { total_duration_ms: 38 * 60 * 1000 },
+    { colors: false, fields: ["duration"] }
+  );
+  assert.equal(fromAlias, "38m");
+
+  const none = renderStatusline({}, { colors: false, fields: ["session_duration"] });
+  assert.equal(none, "");
+});
+
+test("tokens breakdown renderer displays input, cache, and output tokens", () => {
+  const out = renderStatusline(
+    {
+      context_window: {
+        current_usage: {
+          input_tokens: 12000,
+          cache_read_input_tokens: 320000,
+          output_tokens: 18000,
+        },
+      },
+    },
+    { colors: false, fields: ["tokens"] }
+  );
+  assert.equal(out, "I:12k C:320k O:18k");
+
+  const aliasOut = renderStatusline(
+    {
+      context_window: {
+        total_input_tokens: 1500000,
+        total_output_tokens: 25000,
+      },
+    },
+    { colors: false, fields: ["token_breakdown"] }
+  );
+  assert.equal(aliasOut, "I:1.5M O:25k");
+});
+
+test("rate_limit burn rate trend displays up, down, or flat indicator", () => {
+  const now = Date.now();
+  // 5h window (18000s), resets in 2 hours (7200s). Elapsed = 3 hours (60% elapsed).
+  const resetsAt = new Date(now + 2 * 3600 * 1000).toISOString();
+
+  // Case 1: Used 80% (> 60% + 5% -> burn rate is UP: ↑)
+  const upOut = renderStatusline(
+    {
+      rate_limits: {
+        five_hour: { used_percentage: 80, resets_at: resetsAt },
+      },
+    },
+    {
+      colors: false,
+      fields: ["rate_limit"],
+      rateLimitWindows: ["5h"],
+      showRateLimitCountdown: false,
+      showRateLimitTrend: true,
+    }
+  );
+  assert.equal(upOut, "5h:80%↑");
+
+  // Case 2: Used 40% (< 60% - 5% -> burn rate is DOWN: ↓)
+  const downOut = renderStatusline(
+    {
+      rate_limits: {
+        five_hour: { used_percentage: 40, resets_at: resetsAt },
+      },
+    },
+    {
+      colors: false,
+      fields: ["rate_limit"],
+      rateLimitWindows: ["5h"],
+      showRateLimitCountdown: false,
+      showRateLimitTrend: true,
+    }
+  );
+  assert.equal(downOut, "5h:40%↓");
+
+  // Case 3: Used 62% (within +-5% of 60% -> FLAT: no arrow)
+  const flatOut = renderStatusline(
+    {
+      rate_limits: {
+        five_hour: { used_percentage: 62, resets_at: resetsAt },
+      },
+    },
+    {
+      colors: false,
+      fields: ["rate_limit"],
+      rateLimitWindows: ["5h"],
+      showRateLimitCountdown: false,
+      showRateLimitTrend: true,
+    }
+  );
+  assert.equal(flatOut, "5h:62%");
+
+  // Case 4: showRateLimitTrend is false (default) -> no arrow even when over pace
+  const defaultOut = renderStatusline(
+    {
+      rate_limits: {
+        five_hour: { used_percentage: 80, resets_at: resetsAt },
+      },
+    },
+    {
+      colors: false,
+      fields: ["rate_limit"],
+      rateLimitWindows: ["5h"],
+      showRateLimitCountdown: false,
+      showRateLimitTrend: false,
+    }
+  );
+  assert.equal(defaultOut, "5h:80%");
+});
+
+test("lines: 'auto' adapts dynamically to terminal width", () => {
+  const input = {
+    workspace: { current_dir: "/path/to/my-project" },
+    model: { display_name: "claude-3-7-sonnet" },
+    context_window: { total_input_tokens: 58000, context_window_size: 200000 },
+  };
+
+  // Wide terminal (200 cols): fits comfortably on single line
+  const wideOut = renderStatusline(input, {
+    colors: false,
+    lines: "auto",
+    terminalWidth: 200,
+  });
+  assert.ok(!wideOut.includes("\n"), "Wide terminal should stay on a single line");
+  assert.ok(wideOut.includes("claude-3-7-sonnet"));
+  assert.ok(wideOut.includes("my-project"));
+
+  // Narrow terminal (30 cols): single line is ~50 chars, exceeds 30 cols, so auto-splits into two lines
+  const narrowOut = renderStatusline(input, {
+    colors: false,
+    lines: "auto",
+    terminalWidth: 30,
+  });
+  assert.ok(narrowOut.includes("\n"), "Narrow terminal should auto-split into two lines");
+  const [line1, line2] = narrowOut.split("\n");
+  assert.ok(line1.includes("claude-3-7-sonnet"));
+  assert.ok(line2.includes("my-project"));
 });

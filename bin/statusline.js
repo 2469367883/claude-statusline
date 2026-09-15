@@ -21,6 +21,7 @@ const {
   stripAnsi,
   makeProgressBar,
   formatCountdown,
+  formatDuration,
   readLastUsageFromTranscript,
 } = require("../lib/utils.js");
 const {
@@ -97,14 +98,13 @@ function renderStatusline(input = {}, customConfig = {}) {
   const rawDelimiter = typeof config.delimiter === "string" ? config.delimiter : "|";
   const delimiter = ` ${colors.DIM}${rawDelimiter.trim()}${colors.RESET} `;
 
-  let result = "";
-  const numLines = Number(config.lines);
-  if (numLines === 2) {
+  const activeFields = Array.isArray(config.fields) ? config.fields : DEFAULT_FIELDS;
+
+  function renderTwoLines() {
     let line1Fields = config.line1;
     let line2Fields = config.line2;
 
     if (!Array.isArray(line1Fields) || !Array.isArray(line2Fields)) {
-      const activeFields = Array.isArray(config.fields) ? config.fields : DEFAULT_FIELDS;
       const splitIdx = activeFields.indexOf("project");
       if (splitIdx > 0) {
         line1Fields = activeFields.slice(0, splitIdx);
@@ -120,12 +120,32 @@ function renderStatusline(input = {}, customConfig = {}) {
     const line2Str = renderFieldList(line2Fields, context, delimiter);
 
     if (line1Str && line2Str) {
-      result = `${line1Str}\n${line2Str}`;
+      return `${line1Str}\n${line2Str}`;
+    }
+    return line1Str || line2Str || "";
+  }
+
+  const isAuto = config.lines === "auto" || String(config.lines).toLowerCase() === "auto";
+  const numLines = Number(config.lines);
+
+  let result = "";
+  if (numLines === 2) {
+    result = renderTwoLines();
+  } else if (isAuto) {
+    const singleLine = renderFieldList(activeFields, context, delimiter);
+    const cols =
+      Number(config.terminalWidth) ||
+      process.stdout.columns ||
+      process.stderr.columns ||
+      Number(process.env.COLUMNS) ||
+      100;
+
+    if (stripAnsi(singleLine).length > cols) {
+      result = renderTwoLines();
     } else {
-      result = line1Str || line2Str || "";
+      result = singleLine;
     }
   } else {
-    const activeFields = Array.isArray(config.fields) ? config.fields : DEFAULT_FIELDS;
     result = renderFieldList(activeFields, context, delimiter);
   }
 
@@ -155,14 +175,18 @@ function run() {
 
   process.stdin.on("end", () => {
     let input = {};
-    try {
-      input = JSON.parse(raw || "{}");
-    } catch {
-      // Gracefully handle malformed json
+    if (raw.trim()) {
+      try {
+        input = JSON.parse(raw);
+      } catch (err) {
+        // Silently proceed with empty input object
+      }
     }
 
     const output = renderStatusline(input);
-    process.stdout.write(output);
+    if (output) {
+      process.stdout.write(output + "\n");
+    }
   });
 }
 
@@ -171,9 +195,11 @@ if (require.main === module) {
 }
 
 module.exports = {
+  renderFieldList,
   renderStatusline,
   loadConfig,
   formatCountdown,
+  formatDuration,
   getMcpServerCount,
   readGitStatus,
   makeProgressBar,

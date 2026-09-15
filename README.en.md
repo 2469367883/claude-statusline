@@ -25,11 +25,12 @@ Sonnet 3.7 | [██░░░░░░] 29% (58.0k/200.0k) | $0.18 (¥1.34) | 5h
 Statusline scripts are executed as independent subprocesses every time the prompt redraws. `claude-code-status` is designed for **fast execution**, **zero maintenance overhead**, and **reliable cross-platform operation**:
 
 - **Zero External Dependencies**: Implemented strictly with native Node.js standard modules (`fs`, `path`, `child_process`, `crypto`). If you run Claude Code, you already have Node.js. No build tools, no background daemons, and zero `node_modules` to manage.
+- **Low-Overhead Design**: Avoids third-party runtimes and daemon background processes, utilizing short-lived Git caching and tail-buffer reading to minimize repeated refresh overhead.
 - **Ultra-Fast Latency (1~3ms)**: Because the script is invoked repeatedly on terminal redraws, execution time is kept under 3ms to avoid typing lag or cursor stutter.
 - **Native Cross-Platform**: Operates out of the box on Windows (PowerShell and CMD), macOS, and Linux without needing `bash`, `jq`, or WSL.
 - **Subprocess-Safe Git Caching**: In large git repositories, running `git status` repeatedly can slow down the terminal. This tool caches `git status` output in the OS temporary directory with a configurable TTL (default: 2s) and enforces a 2-second timeout.
-- **Memory-Safe Transcript Tail-Parsing**: When context token data is retrieved from session logs, it reads only the last 64KB chunk in reverse buffer rather than loading entire multi-megabyte JSONL files into memory.
-- **Dual Currency & Proxy Pricing**: Supports USD, CNY, or both simultaneously, with a configurable pricing multiplier (`costMultiplier`) for developers routing through API proxies or resellers.
+- **Safe Long-Session Transcript Parsing**: When reading context token data from session logs, it reads only the trailing 64KB chunk in reverse buffer rather than loading entire multi-megabyte JSONL files into memory, avoiding memory spikes and significantly reducing I/O and parsing overhead in large conversation sessions.
+- **Proxy Multiplier & Multi-Currency Support**: For developers routing Claude Code through third-party API relays, proxies, or resellers where pricing differs from official rates, you can configure a proxy markup multiplier (`costMultiplier`) and currency exchange rate (`exchangeRate`) to calculate and display your actual spend in USD, CNY, or both.
 
 ---
 
@@ -39,11 +40,14 @@ Statusline scripts are executed as independent subprocesses every time the promp
 - **Short CLI Alias**: Installed as `claude-code-status` with a 3-letter alias `ccs` (`ccs ui`, `ccs theme`, `ccs preview`).
 - **Color Themes**: 4 built-in palettes: `default` (standard ANSI), `catppuccin` (Mocha TrueColor), `nord`, and `tokyo` (Tokyo Night).
 - **Model Aliases**: Automatically strips trailing date suffixes (e.g. `claude-3-7-sonnet-20250219` becomes `claude-3-7-sonnet`) and supports user-defined name mappings.
-- **Code Velocity Tracker**: Tracks added and removed lines (`+185/-32`) in real time.
+- **Cost Conversion & Proxy Multiplier**: Scales Claude Code's reported `total_cost_usd` by a customizable proxy/relay multiplier (`costMultiplier`, e.g. `1.5`x) and exchange rate (`exchangeRate`), displaying the calculated actual cost in USD, CNY, or both, with an optional multiplier tag (`(x1.5)`; note: calculated from reported cost, not an independent token billing engine).
+- **Multi-Window Rate Limits & Burn Rate**: Displays Claude Code's 5-hour, 7-day, and monthly rate limit status with reset countdowns (e.g. `5h:28%(2h14m)`), with optional burn rate velocity trends (`showRateLimitTrend`, `↑` fast / `↓` slow).
+- **Session Duration**: Optional runtime clock tracking how long the current session has been active (e.g. `38m`, `1h 24m`).
+- **Token Breakdown**: Optional granular breakdown of Input, Cache, and Output tokens (e.g. `I:12k C:320k O:18k`).
+- **MCP Server Counter**: Scans user-level and project-level MCP configurations and reports the number of configured MCP servers (e.g. `MCP:2`).
 - **Prompt Cache Monitoring**: Displays prompt cache hit percentage (`Cache:92%`).
-- **Rate Limit Quotas**: Tracks 5-hour, 7-day, and monthly usage limits with remaining time countdowns.
-- **MCP Server Counter**: Scans user settings and project configs for active MCP servers.
-- **Dual-Line Mode**: Supports splitting output across two lines (`lines: 2`) for narrow or split terminal layouts.
+- **Code Velocity Tracker**: Tracks added and removed lines (`+185/-32`) in real time.
+- **Adaptive Auto Layout**: Supports single line (`lines: 1`), dual lines (`lines: 2`), and dynamic wrap based on terminal width (`lines: "auto"`).
 - **JSONC Config**: Configuration file supports line comments (`//`), block comments (`/* */`), and trailing commas.
 
 ---
@@ -70,11 +74,15 @@ ccs preview              # Preview layouts and themes
 ccs uninstall            # Remove statusline from Claude Code settings
 ```
 
-### Method 2: npx (Without Installation)
+### Method 2: npx (Quick Trial)
 
 ```bash
+# Recommended only for quick evaluation or running setup commands
 npx claude-code-status install
 ```
+
+> [!NOTE]
+> You can use `npx claude-code-status` for a quick trial or setup, but running `npx` as a permanent statusLine command is **not recommended**. Because the statusline executes every time the prompt redraws, `npx` can introduce noticeable delay from package resolution and network checks. It is great for testing, but not as a permanent configuration.
 
 ### Method 3: From Source
 
@@ -118,16 +126,18 @@ On first run or after `ccs install`, an annotated config file is generated at `~
     "context",      // Context window tokens and progress bar
     "project",      // Current directory name
     "git",          // Git branch and dirty marker
-    // "cost",      // Session cost (supports USD, CNY, and multiplier)
-    // "rate_limit",// Quota percentage and reset countdown
+    // "tokens",    // Token breakdown (e.g. I:12k C:320k O:18k)
+    // "session_duration", // Elapsed session runtime (e.g. 38m or 1h 24m)
+    // "cost",      // Session cost (scales Claude Code's total_cost_usd by proxy multiplier & exchange rate)
+    // "rate_limit",// Displays Claude Code's 5h, 7d, and monthly limits with reset countdowns
     // "cache",     // Prompt cache hit rate
     // "lines",     // Lines added/removed count
-    // "mcp",       // Connected MCP server count
+    // "mcp",       // Scans user-level and project-level configured MCP server count
     // "effort",    // Reasoning effort level
     // "output_style" // Output style tag
   ],
 
-  // 2. Display lines (1 for single line, 2 for dual line)
+  // 2. Display lines (1 for single line, 2 for dual line, "auto" for width-adaptive)
   "lines": 1,
 
   // 3. Git status settings
@@ -137,15 +147,16 @@ On first run or after `ccs install`, an annotated config file is generated at `~
   // 4. Context window size limit (0 = auto-detect)
   "contextWindowSize": 0,
 
-  // 5. Cost and currency
+  // 5. Cost calculation & proxy multiplier (scales Claude Code's total_cost_usd, not independent billing)
   "currency": "USD",          // "USD", "CNY", or "BOTH"
-  "costMultiplier": 1.0,      // Multiplier for proxy/reseller rates
+  "costMultiplier": 1.0,      // Proxy/relay price multiplier (e.g. 1.2 or 1.5 for third-party API resellers)
   "exchangeRate": 7.25,       // USD to CNY exchange rate
-  "showCostMultiplier": false,
+  "showCostMultiplier": false,// Show multiplier badge suffix (e.g. $0.27 (x1.5))
 
   // 6. Rate limits
   "rateLimitWindows": ["5h", "7d", "mo"],
   "showRateLimitCountdown": true,
+  "showRateLimitTrend": false, // Show burn rate trend arrow (↑ fast / ↓ slow)
 
   // 7. Visual styling
   "delimiter": "|",
@@ -177,11 +188,13 @@ On first run or after `ccs install`, an annotated config file is generated at `~
 | `context` | Context window usage with progress bar | Enabled | `[██░░░░░░] 29% (58.0k/200.0k)` |
 | `project` | Current directory name | Enabled | `your-project` |
 | `git` | Git branch and dirty marker (cached) | Enabled | `main*` or `main ↑2 ↓1*` |
-| `cost` | Session cost (USD / CNY / multiplier) | Optional | `$0.18 (¥1.34)` |
-| `rate_limit` | Quota usage and reset countdown | Optional | `5h:28%(2h14m)` |
+| `tokens` | Token breakdown (Input / Cache / Output) | Optional | `I:12k C:320k O:18k` |
+| `session_duration` | Elapsed session runtime duration | Optional | `38m` or `1h 24m` |
+| `cost` | Session cost (scales total_cost_usd by proxy multiplier and exchange rate) | Optional | `$0.18 (¥1.34)` or `$0.27 (x1.5)` |
+| `rate_limit` | Quota usage, reset countdown, and optional burn rate trend | Optional | `5h:28%(2h14m)` or `5h:72%↑` |
 | `cache` | Prompt cache hit rate | Optional | `Cache:92%` |
 | `lines` | Code velocity (lines added and removed) | Optional | `+185/-32` |
-| `mcp` | Configured MCP server count | Optional | `MCP:2` |
+| `mcp` | Scans user-level and project-level MCP configurations and counts servers | Optional | `MCP:2` |
 | `effort` | Reasoning effort level | Optional | `[effort: high]` |
 | `output_style` | Output style tag | Optional | `[concise]` |
 

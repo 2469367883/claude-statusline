@@ -363,9 +363,10 @@ function preview() {
       total_cost_usd: 0.185,
       total_lines_added: 185,
       total_lines_removed: 32,
+      total_duration_ms: (1 * 3600 + 24 * 60) * 1000,
     },
     rate_limits: {
-      five_hour: { used_percentage: 28, resets_at: resetIn2h15m },
+      five_hour: { used_percentage: 78, resets_at: resetIn2h15m },
       seven_day: { used_percentage: 42, resets_at: resetIn3d4h },
     },
     effort: { level: "high" },
@@ -435,6 +436,22 @@ function preview() {
         theme: "tokyo",
         fields: ["model", "context", "cost", "rate_limit", "project", "git"],
         currency: "CNY",
+      },
+    },
+    {
+      title: "8. Extended Metrics (Tokens breakdown, Session duration, Rate limit burn rate ↑)",
+      input: sampleInput,
+      config: {
+        fields: [
+          "model",
+          "context",
+          "tokens",
+          "session_duration",
+          "rate_limit",
+          "project",
+          "git",
+        ],
+        showRateLimitTrend: true,
       },
     },
   ];
